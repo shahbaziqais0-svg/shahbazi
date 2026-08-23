@@ -14,109 +14,120 @@ from telegram.ext import (
     filters,
 )
 
-# توکن جدید تلگرام و کلید هوش مصنوعی
+# تنظیمات هویتی و دسترسی
 TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
 GEMINI_API_KEY = "AQ.Ab8RN6KT5fQH2evb-MPZ4aGVu0mCDDZDrm_CM0e5m3pF1L9Eag"
 
-# آیدی عددی و مشخصات ادمین
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
 
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-# زمان‌بندی ارسال خودکار در کانال: هر ۶ ساعت (۲۱۶۰۰ ثانیه)
-POST_INTERVAL_SECONDS = 21600
+# بازه بررسی هوشمند بازار: هر ۳۰ دقیقه (۱۸۰۰ ثانیه)
+MARKET_CHECK_INTERVAL = 1800
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی جهت تأیید سلامت در رندر
+# وب‌سرور داخلی برای تأیید سلامت در Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", port), handler) as httpd:
-        logging.info(f"وب‌سرور داخلی روی پورت {port} فعال شد.")
+        logging.info(f"وب‌سرور سبک روی پورت {port} فعال شد.")
         httpd.serve_forever()
 
-def ask_gemini(prompt_text):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={GEMINI_API_KEY}"
+def ask_gemini_with_search(prompt_text):
+    """ارسال درخواست به جمینای با قابلیت سرچ زنده وب جهت دریافت قیمت‌ها و اخبار واقعی"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
+    
     payload = {
         "contents": [{
             "parts": [{"text": prompt_text}]
-        }]
+        }],
+        "tools": [
+            {"googleSearch": {}}
+        ]
     }
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         if response.status_code == 200:
             data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         else:
-            return f"خطا در پردازش هوش مصنوعی:\n{response.text}"
+            return f"خطا در مدل هوش مصنوعی:\n{response.text}"
     except Exception as err:
         return f"خطای ارتباطی: {str(err)}"
 
-# وظیفه ارسال خودکار دوره‌ای به کانال
-async def auto_post_loop(app):
-    await asyncio.sleep(5)
+# ناظر هوشمند بازار پتروشیمی (ارسال هدفمند و مقطعی بدون پیام‌های اسپم)
+async def market_sentinel_loop(app):
+    await asyncio.sleep(10)
     while True:
         prompt = """
-        شما موتور هوشمند رصد، راستی‌آزمایی و تحلیل بازار پتروشیمی و پلیمر ایران برای کانال @shahnawazplast هستید.
+        شما تحلیل‌گر ارشد و دیده‌بان لحظه‌ای بازار پلیمر و پتروشیمی ایران (شهنواز پلاست) هستید.
         
-        یک گزارش جامع، روزآمد و دقیق با بخش‌های زیر تولید کنید:
+        با جستجو در اخبار و نرخ‌های اخیر بورس کالا، دلار و بازار آزاد پلیمر:
+        اگر در ساعات اخیر تحول مهمی رخ داده است (نوسان نرخ ارز، اعلام قیمت پایه بورس کالا، رقابت سنگین روی یک گرید خاص، اخبار تعمیرات پتروشیمی یا فرصت طلایی خرید مواد اولیه):
         
-        ۱. 🔍 راستی‌آزمایی پیش‌بینی‌های قبلی:
-        - ارزیابی تحقق نوسانات و روندهای تخمین‌زده‌شده اخیر.
+        یک پیام بسیار شیک، مرتب، خلاصه و تفکیک‌شده (حداکثر ۱۰۰ تا ۱۵۰ کلمه) تولید کنید که ساختار زیر را داشته باشد:
         
-        ۲. 🏭 رویدادها و اخبار روز پتروشیمی:
-        - آخرین وضعیت پتروشیمی‌ها، نرخ خوراک، وضعیت ارز و تصمیمات بورس کالا.
+        📌 [عنوان جذاب و فوری | مثلاً: 🚨 سیگنال فوری خرید | ⚡ نوسان تالار پتروشیمی | 📊 تابلوی مظنه روز]
         
-        ۳. 💰 تابلوی قیمت‌های تخمینی بازار و بورس (به تومان/کیلوگرم):
-        - پلی‌اتیلن سنگین فیلم (020 / F7000)
-        - پلی‌اتیلن سبک فیلم (0075 / 2420)
-        - پلی‌اتیلن بادی (BL3)
-        - انواع پلی‌پروپیلن (PP نساجی و شیمیایی)
+        🔹 موضوع / خبر کلیدی:
+        (توضیح بسیار خلاصه در ۱ یا ۲ خط)
         
-        ۴. 🎯 سیگنال مشخص خرید/فروش + زمان اعتبار:
-        - استراتژی مشخص برای تولیدکنندگان (خرید فوری، انتظار، یا خرید پله‌ای).
+        💰 مظنه تقریبی گریدهای پرمصرف (حتماً با درج واحد «تومان بر هر کیلوگرم»):
+        ▫️ فیلم سنگین (F7000 / 020): ... تومان
+        ▫️ فیلم سبک (0075 / 2420): ... تومان
+        ▫️ بادی (BL3): ... تومان
+        ▫️ تزریقی / PP: ... تومان
         
-        قوانین: نگارش تمیز، استفاده از ایموجی‌های منظم و بدون ساختارهای مارک‌داون پیچیده.
+        🎯 توصیه عملیاتی به تولیدکننده:
+        (سیگنال شفاف: مثلاً خرید فوری پله‌ای / دست نگه‌داشتن و عدم ورود به رقابت بورس)
+        
+        ⏳ اعتبار تحلیل: (مثلاً تا پایان تالار امروز / ۲۴ ساعت آینده)
+        
+        قوانین اکید:
+        - کلی‌گویی نکنید؛ داده‌ها متمرکز و خوانا باشند.
+        - اگر هیچ نوسان یا رویداد مهمی در بازار وجود ندارد و تغییر خاصی رخ نداده، فقط و فقط کلمه «NO_UPDATE» را برگردانید و چیز دیگری ننویسید.
         """
         
         try:
-            analysis_text = ask_gemini(prompt)
-            message = (
-                "📊 دیده‌بان جامع، قیمت‌ها و تحلیل تخصصی پتروشیمی\n"
-                "🏭 شهنواز پلاست\n\n"
-                f"{analysis_text}\n\n"
-                "─────────────────────\n"
-                f"☎️ پشتیبانی: {SUPPORT_PHONE}\n"
-                "📢 کانال اطلاع‌رسانی: @shahnawazplast"
-            )
+            market_report = ask_gemini_with_search(prompt)
             
-            await app.bot.send_message(
-                chat_id=TARGET_CHAT_ID,
-                text=message
-            )
-            logging.info("گزارش خودکار در کانال ثبت شد.")
+            # اگر بازار تغییری نکرده باشد، پیامی ارسال نمی‌شود تا کانال شلوغ نشود
+            if "NO_UPDATE" not in market_report and len(market_report) > 30:
+                final_post = (
+                    f"{market_report}\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    f"☎️ مشاوره و تأمین بار: {SUPPORT_PHONE}\n"
+                    "📢 رسانه تخصصی: @shahnawazplast"
+                )
+                
+                await app.bot.send_message(
+                    chat_id=TARGET_CHAT_ID,
+                    text=final_post
+                )
+                logging.info("پیام تحلیلی هدفمند در کانال منتشر شد.")
         except Exception as e:
-            logging.error(f"خطا در ارسال گزارش به کانال: {e}")
+            logging.error(f"خطا در بررسی ناظر بازار: {e}")
 
-        await asyncio.sleep(POST_INTERVAL_SECONDS)
+        await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
-# پاسخ به دستور /start
+# دستور /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "شما می‌توانید هر سوالی درباره قیمت مواد، گریدها، تحلیل بورس یا فرمول‌های تولید پلاستیک دارید مستقیماً بپرسید."
+        "اینجا می‌توانید درباره قیمت روز مواد، ترکیب فرمولاسیون نایلون و تزریق، جایگزینی گریدها و زمان‌بندی ورود به تالار بورس کالا سوالات خود را بپرسید."
     )
     await update.message.reply_text(welcome_text)
 
-# بررسی و پردازش پیام‌ها با اعمال محدودیت دسترسی در گروه
+# پردازش پیام‌ها و اعمال محدودیت در گروه‌ها
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -125,49 +136,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    # اگر پیام داخل گروه یا سوپرگروه ارسال شده باشد
+    # محدودیت پاسخ‌گویی در گروه‌ها (صرفاً برای ادمین)
     if chat_type in ["group", "supergroup"]:
-        # فقط در صورتی که پیام از طرف خودتان باشد پاسخ می‌دهد
         if user_id != ADMIN_USER_ID:
-            return  # پیام سایر افراد نادیده گرفته می‌شود
+            return
 
-    # اگر در پیوی بود یا توسط ادمین در گروه ارسال شده بود:
-    status_msg = await update.message.reply_text("⏳ در حال پردازش و استخراج تحلیل تخصصی...")
+    status_msg = await update.message.reply_text("🔎 در حال استخراج جدیدترین داده‌های بازار و تنظیم تحلیل...")
 
     user_prompt = f"""
-    شما مشاور فنی و تحلیل‌گر تخصصی بازار پتروشیمی، پلیمرها و تولید پلاستیک در مجموعه شهنواز پلاست هستید.
-    کاربر سوال زیر را مطرح کرده است:
+    شما مشاور ارشد و تحلیل‌گر فنی پتروشیمی، فرمولاسیون پلاستیک و بورس کالای شهنواز پلاست هستید.
+    کاربر سوال زیر را پرسیده است:
     "{user_text}"
     
-    پاسخ را با ویژگی‌های زیر بنویسید:
-    - دقیق، محترمانه و به زبان فارسی روان.
-    - در صورت نیاز به پیگیری خرید یا مشاوره اختصاصی، شماره تماس پشتیبانی ({SUPPORT_PHONE}) ذکر شود.
-    - متن خروجی ساده و بدون تگ‌های خراب‌کننده باشد.
+    پاسخ را با قواعد زیر بنویسید:
+    - بررسی دقیق داده‌ها و قیمت‌های به‌روز.
+    - کلیه قیمت‌ها به «تومان بر کیلوگرم» با تفکیک روشن آورده شوند.
+    - پاسخ تمیز، پاراگراف‌بندی‌شده، صریح و بدون مقدمه‌چینی اضافه باشد.
+    - در انتها برای ثبت سفارش یا خرید عمده، کاربر را به شماره ({SUPPORT_PHONE}) راهنمایی کنید.
     """
 
     try:
-        reply_from_ai = ask_gemini(user_prompt)
-        await status_msg.edit_text(reply_from_ai)
+        reply = ask_gemini_with_search(user_prompt)
+        await status_msg.edit_text(reply)
     except Exception as e:
-        await status_msg.edit_text(f"خطا در دریافت تحلیل: {e}")
+        await status_msg.edit_text(f"خطا در پردازش تحلیل: {e}")
 
 async def post_init(application):
-    asyncio.create_task(auto_post_loop(application))
+    asyncio.create_task(market_sentinel_loop(application))
 
 if __name__ == "__main__":
-    # اجرای وب‌سرور در ترد مجزا
+    # وب‌سرور داخلی برای Render
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
-    # پاک‌سازی خودکار اتصالات و وب‌هوک‌های قبلی
+    # پاک‌سازی وب‌هوک‌های قبلی
     try:
         requests.get(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
             timeout=15,
         )
-        logging.info("اتصال سرور قبلی و وب‌هوک با موفقیت ریست شد.")
+        logging.info("وب‌هوک با موفقیت آزاد شد.")
     except Exception as e:
-        logging.error(f"خطا در ریست وب‌هوک: {e}")
+        logging.error(f"خطا در بررسی وب‌هوک: {e}")
 
     application = (
         ApplicationBuilder()
@@ -181,5 +191,5 @@ if __name__ == "__main__":
         MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     )
 
-    print("ربات دیده‌بان پتروشیمی فعال شد...")
+    print("دیده‌بان هوشمند شهنواز پلاست آنلاین شد...")
     application.run_polling()
