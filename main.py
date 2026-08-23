@@ -14,9 +14,9 @@ from telegram.ext import (
     filters,
 )
 
-# خواندن امن کلیدها از متغیرهای محیطی Render بدون افشا در گیت‌هاب
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+# دریافت امن کلیدها از پنل Render یا تعریف مستقیم
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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").strip()
 
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
@@ -31,6 +31,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
+# وب‌سرور داخلی سبک سازگار با Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
@@ -42,37 +43,48 @@ def run_dummy_server():
         logging.error(f"خطای وب‌سرور: {e}")
 
 def ask_ai(prompt_text):
-    if not GROQ_API_KEY:
-        return "خطا: کلید هوش مصنوعی GROQ_API_KEY در تنظیمات سرور ثبت نشده است."
-
+    """تست خودکار مدل‌های فعال Groq برای جلوگیری از هرگونه خطای نام مدل"""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": "llama-3.1-8b-instant",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
-                    "پاسخ‌ها دقیق، خوش‌فرم، فارسی روان و تمام قیمت‌ها با واحد «تومان بر کیلوگرم» تفکیک شوند."
-                ),
-            },
-            {"role": "user", "content": prompt_text},
-        ],
-        "temperature": 0.4,
-    }
+    
+    # لیست تمام مدل‌های معتبر و فعال Groq
+    candidate_models = [
+        "llama-3.3-70b-versatile",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it"
+    ]
 
-    try:
-        res = requests.post(url, headers=headers, json=payload, timeout=35)
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"].strip()
-        else:
-            return f"خطا در مدل: {res.text}"
-    except Exception as err:
-        return f"خطای ارتباطی: {str(err)}"
+    last_error = ""
+    for model_name in candidate_models:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "شما دستیار و مشاور تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
+                        "پاسخ‌ها را دقیق، کامل، فارسی روان، بدون زیاده‌گویی و با ذکر قیمت‌ها به تومان بر هر کیلوگرم بنویسید."
+                    ),
+                },
+                {"role": "user", "content": prompt_text},
+            ],
+            "temperature": 0.4,
+        }
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=30)
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"].strip()
+            else:
+                last_error = res.text
+        except Exception as err:
+            last_error = str(err)
+            
+    return f"خطا در مدل: {last_error}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(15)
@@ -83,9 +95,9 @@ async def market_sentinel_loop(app):
         📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار پتروشیمی]
         
         🔹 رویداد مهم بازار:
-        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه یا ارز)
+        (توضیح بسیار کوتاه وضعیت بورس کالا، عرضه یا ارز)
         
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
@@ -156,10 +168,6 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
-    if not TELEGRAM_TOKEN:
-        logging.critical("توکن تلگرام یافت نشد! لطفاً TELEGRAM_TOKEN را در پنل Environment وارد کنید.")
-        exit(1)
-
     try:
         requests.get(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
@@ -181,7 +189,7 @@ if __name__ == "__main__":
             MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
         )
 
-        print("ربات شهنواز پلاست با امنیت کامل آنلاین شد...")
+        print("ربات شهنواز پلاست فعال شد...")
         application.run_polling(drop_pending_updates=True)
     except Exception as err:
-        logging.critical(f"خطا در اجرای ربات: {err}")
+        logging.critical(f"خطای کلی در اجرای ربات: {err}")
