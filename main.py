@@ -21,7 +21,7 @@ TELEGRAM_TOKEN = "8844207944:AAGMLjxUP3ImujiWTQzA2aQ_oLI6NiuIroY"
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-# زمان‌بندی ارسال در کانال: هر ۶ ساعت (۲۱۶۰۰ ثانیه)
+# زمان‌بندی ارسال خودکار به کانال: هر ۶ ساعت (۲۱۶۰۰ ثانیه)
 POST_INTERVAL_SECONDS = 21600
 
 logging.basicConfig(
@@ -29,7 +29,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# وب‌سرور سبک برای زنده نگه‌داشتن سرویس در پلن رایگان Render
+# وب‌سرور داخلی جهت زنده نگه‌داشتن وب‌سرویس در پنل Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
@@ -56,7 +56,7 @@ def ask_gemini(prompt_text):
     except Exception as err:
         return f"خطای ارتباطی: {str(err)}"
 
-# وظیفه ارسال خودکار دوره‌ای به کانال
+# حلقه ارسال دوره‌ای گزارش به کانال
 async def auto_post_loop(app):
     await asyncio.sleep(5)
     while True:
@@ -110,7 +110,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
         "شما می‌توانید هر سوالی درباره قیمت مواد، گریدها، تحلیل بورس، زمان خرید یا فرمول‌های تولید پلاستیک دارید مستقیماً اینجا بپرسید تا پاسخ دهم."
     )
-    await update.message.reply_text(welcome_text)# پاسخ هوشمند به سوالات کاربران در پیوی
+    await update.message.reply_text(welcome_text)
+
+# پاسخ هوشمند به سوالات کاربران در پیوی ربات
 async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     await update.message.reply_text("⏳ در حال بررسی سوال و استخراج پاسخ تخصصی...")
@@ -135,8 +137,7 @@ async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYP
 async def post_init(application):
     asyncio.create_task(auto_post_loop(application))
 
-if name == "main":
-    # اجرای وب‌سرور در ترد جداگانه
+if __name__ == "__main__":
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
@@ -146,6 +147,14 @@ if name == "main":
         .post_init(post_init)
         .build()
     )
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & (~filters.COMMAND), handle_user_question)
+    )
+
+    print("ربات دیده‌بان پتروشیمی با وب‌سرور داخلی فعال شد...")
+    application.run_polling()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(
