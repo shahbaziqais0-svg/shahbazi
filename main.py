@@ -14,8 +14,8 @@ from telegram.ext import (
     filters,
 )
 
-# اطلاعات احراز هویت و دسترسی
-TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
+# احراز هویت و دسترسی‌ها
+TELEGRAM_TOKEN = "8844207944:AAHo15EbaQkdg8XK-w2FkGXb-TA7TvvRXqw"
 GROQ_API_KEY = "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"
 
 ADMIN_USER_ID = 6757681583
@@ -24,7 +24,7 @@ ADMIN_USERNAME = "shahnawaz_admin"
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه بررسی بدون اسپم
+MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه بررسی هوشمند وضعیت بازار
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -97,7 +97,7 @@ async def market_sentinel_loop(app):
                     f"{report}\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
-                    "📢 رسانه تخصصی: @shahnawazplast"
+                    "📢 کانال رسمی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
                 logging.info("گزارش تحلیلی به کانال ارسال شد.")
