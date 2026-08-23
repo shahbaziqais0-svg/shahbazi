@@ -14,27 +14,24 @@ from telegram.ext import (
     filters,
 )
 
-# ۱. توکن ربات جدید تلگرام
-TELEGRAM_TOKEN = "8862836655:AAHgueF9p3AmUdyN8BoGjEDLcMyLVkHzXIw"
-
-# ۲. کلید هوش مصنوعی Groq
+# اطلاعات احراز هویت و دسترسی
+TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
 GROQ_API_KEY = "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"
 
-# ۳. مشخصات ادمین و رسانه
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
 
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-MARKET_CHECK_INTERVAL = 1800  # بررسی وضعیت هر ۳۰ دقیقه بدون ارسال اسپم
+MARKET_CHECK_INTERVAL = 1800  # بررسی هوشمند بازار هر ۳۰ دقیقه
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی سبک جهت حفظ پایداری در رندر
+# وب‌سرور داخلی سبک سازگار با Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
@@ -52,13 +49,13 @@ def ask_ai(prompt_text):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "llama-3.1-8b-instant",
+        "model": "openai/gpt-oss-120b",
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی شهنواز پلاست هستید. "
-                    "پاسخ‌ها دقیق، خوش‌فرم، بدون مقدمه‌چینی اضافه و تمام قیمت‌ها الزماً به «تومان بر کیلوگرم» تفکیک شوند."
+                    "شما دستیار و مشاور تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
+                    "پاسخ‌ها را کامل، دقیق، فارسی روان، بدون زیاده‌گویی و با ذکر قیمت‌ها به تومان بر هر کیلوگرم بنویسید."
                 ),
             },
             {"role": "user", "content": prompt_text},
@@ -71,22 +68,22 @@ def ask_ai(prompt_text):
         if res.status_code == 200:
             return res.json()["choices"][0]["message"]["content"].strip()
         else:
-            return f"خطای مدل: {res.text}"
+            return f"خطا در مدل: {res.text}"
     except Exception as err:
-        return f"خطای ارتباط با سرور: {str(err)}"
+        return f"خطای ارتباطی: {str(err)}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(15)
     while True:
         prompt = """
-        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ تا ۱۲۰ کلمه) درباره آخرین تحولات بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
-        📌 [عنوان جذاب | مثلاً: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار بورس کالا]
+        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
         
-        🔹 تحول بازار:
-        (توضیح کوتاه ۱ یا ۲ خطی درباره وضعیت عرضه، بورس یا ارز)
+        🔹 رویداد مهم بازار:
+        (توضیح بسیار کوتاه وضعیت بورس کالا، ارز یا عرضه پتروشیمی‌ها)
         
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
@@ -97,7 +94,7 @@ async def market_sentinel_loop(app):
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        قانون: اگر در ساعات گذشته هیچ نوسان و رویدادی نبوده، فقط کلمه NO_UPDATE را بنویسید.
+        اگر در بازار هیچ تحول و نوسانی نیست فقط بنویسید NO_UPDATE
         """
 
         try:
@@ -107,10 +104,10 @@ async def market_sentinel_loop(app):
                     f"{report}\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
                     f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
-                    "📢 کانال تخصصی: @shahnawazplast"
+                    "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("تحلیل جدید در کانال ثبت شد.")
+                logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
             logging.error(f"خطا در ارسال به کانال: {e}")
 
@@ -119,7 +116,7 @@ async def market_sentinel_loop(app):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید مستقیماً بپرسید."
+        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید بپرسید."
     )
     await update.message.reply_text(welcome_text)
 
@@ -131,7 +128,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    # محدودیت پاسخ در گروه‌ها (فقط برای ادمین)
+    # در گروه فقط به ادمین پاسخ می‌دهد
     if chat_type in ["group", "supergroup"]:
         if user_id != ADMIN_USER_ID:
             return
@@ -149,7 +146,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = ask_ai(user_prompt)
         await status_msg.edit_text(reply)
     except Exception as e:
-        await status_msg.edit_text(f"خطا در ارتباط: {e}")
+        await status_msg.edit_text(f"خطا در پردازش: {e}")
 
 async def post_init(application):
     asyncio.create_task(market_sentinel_loop(application))
@@ -179,7 +176,7 @@ if __name__ == "__main__":
             MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
         )
 
-        print("ربات شهنواز پلاست با موفقیت فعال شد...")
+        print("دیده‌بان شهنواز پلاست آنلاین شد...")
         application.run_polling(drop_pending_updates=True)
     except Exception as err:
-        logging.critical(f"خطا در راه‌اندازی ربات: {err}")
+        logging.critical(f"خطای کلی در اجرای ربات: {err}")
