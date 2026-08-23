@@ -4,7 +4,7 @@ import logging
 import os
 import socketserver
 import threading
-from openai import OpenAI
+import requests
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -14,110 +14,83 @@ from telegram.ext import (
     filters,
 )
 
-# اطلاعات احراز هویت
+# کلیدها
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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").strip()
 
 ADMIN_USER_ID = 6757681583
-ADMIN_USERNAME = "shahnawaz_admin"
-
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
-
-MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه
+MARKET_CHECK_INTERVAL = 1800
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
     try:
         with socketserver.TCPServer(("", port), handler) as httpd:
-            logging.info(f"وب‌سرور داخلی فعال است روی پورت: {port}")
             httpd.serve_forever()
     except Exception as e:
         logging.error(f"خطای وب‌سرور: {e}")
 
-# اتصال استاندارد از طریق کتابخانه رسمی
-ai_client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=GROQ_API_KEY,
-)
-
 def ask_ai(prompt_text):
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
-    for m in models:
-        try:
-            response = ai_client.chat.completions.create(
-                model=m,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "شما دستیار تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
-                            "پاسخ‌ها را کامل، دقیق، فارسی، بدون مقدمه‌چینی و قیمت‌ها را با واحد تومان بر کیلوگرم ارائه دهید."
-                        ),
-                    },
-                    {"role": "user", "content": prompt_text},
-                ],
-                temperature=0.4,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception:
-            continue
-    return "در حال حاضر ارتباط با موتور هوش مصنوعی برقرار نشد."
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    # مدل قطعی و سبک رسمی
+    payload = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [
+            {
+                "role": "system",
+                "content": "شما مشاور ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. پاسخ‌ها را دقیق، کامل، فارسی روان و با ذکر قیمت‌ها به تومان بر هر کیلوگرم بنویسید.",
+            },
+            {"role": "user", "content": prompt_text},
+        ],
+        "temperature": 0.4,
+    }
+
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=35)
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"].strip()
+        else:
+            # نمایش صریح متن خطا برای عیب‌یابی دقیق
+            return f"پاسخ سرور هوش مصنوعی ({res.status_code}): {res.text}"
+    except Exception as err:
+        return f"خطای اتصال به هوش مصنوعی: {str(err)}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(15)
     while True:
         prompt = """
-        یک گزارش تحلیلی کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
-        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
+        📌 [عنوان جذاب]
+        🔹 رویداد مهم بازار
+        💰 تابلوی مظنه گریدهای پرمصرف (تومان بر کیلوگرم)
+        🎯 توصیه عملیاتی به تولیدکننده
+        ⏳ مهلت اعتبار تحلیل
         
-        🔹 رویداد مهم بازار:
-        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه پتروشیمی‌ها یا ارز)
-        
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
-        ▫️ فیلم سنگین (F7000 / 020): ... تومان
-        ▫️ فیلم سبک (0075 / 2420): ... تومان
-        ▫️ بادی (BL3): ... تومان
-        ▫️ تزریقی / PP: ... تومان
-        
-        🎯 توصیه عملیاتی به تولیدکننده:
-        (خرید پله‌ای / دست نگه‌داشتن)
-        
-        ⏳ مهلت اعتبار تحلیل: ...
-        
-        قانون: اگر تحول خاصی در بازار نیست فقط بنویسید NO_UPDATE
+        اگر تحول خاصی نیست فقط بنویسید NO_UPDATE
         """
-
         try:
             report = ask_ai(prompt)
-            if "NO_UPDATE" not in report and "ارتباط" not in report and len(report) > 30:
-                final_post = (
-                    f"{report}\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
-                    "📢 رسانه تخصصی: @shahnawazplast"
-                )
+            if "NO_UPDATE" not in report and "خطا" not in report and len(report) > 30:
+                final_post = f"{report}\n\n━━━━━━━━━━━━━━━━━━━━\n☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n📢 رسانه تخصصی: {TARGET_CHAT_ID}"
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
             logging.error(f"خطا در ارسال: {e}")
-
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید بپرسید."
-    )
-    await update.message.reply_text(welcome_text)
+    await update.message.reply_text("سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\nهر سوالی درباره قیمت روز مواد یا گریدها دارید بپرسید.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
@@ -127,24 +100,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    if chat_type in ["group", "supergroup"]:
-        if user_id != ADMIN_USER_ID:
-            return
+    if chat_type in ["group", "supergroup"] and user_id != ADMIN_USER_ID:
+        return
 
-    status_msg = await update.message.reply_text("🔎 در حال استخراج و تحلیل داده‌ها...")
-
-    user_prompt = f"""
-    کاربر سوال زیر را پرسیده است:
-    "{user_text}"
-    
-    پاسخ را دقیق، کاربردی و با ذکر قیمت‌ها به «تومان بر کیلوگرم» بدهید. در صورت نیاز به خرید به شماره ({SUPPORT_PHONE}) ارجاع دهید.
-    """
-
-    try:
-        reply = ask_ai(user_prompt)
-        await status_msg.edit_text(reply)
-    except Exception as e:
-        await status_msg.edit_text(f"خطا در پردازش: {e}")
+    status_msg = await update.message.reply_text("🔎 در حال دریافت تحلیل بازار...")
+    reply = ask_ai(user_text)
+    await status_msg.edit_text(reply)
 
 async def post_init(application):
     asyncio.create_task(market_sentinel_loop(application))
@@ -153,20 +114,7 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
-    try:
-        application = (
-            ApplicationBuilder()
-            .token(TELEGRAM_TOKEN)
-            .post_init(post_init)
-            .build()
-        )
-
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(
-            MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
-        )
-
-        print("دیده‌بان آنلاین شد...")
-        application.run_polling(drop_pending_updates=True)
-    except Exception as err:
-        logging.critical(f"خطای کلی: {err}")
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.run_polling(drop_pending_updates=True)
