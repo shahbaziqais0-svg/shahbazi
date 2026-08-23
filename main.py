@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 # اطلاعات احراز هویت و دسترسی
-TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
+TELEGRAM_TOKEN = "8844207944:AAHo15EbaQkdg8XK-w2FkGXb-TA7TvvRXqw"
 GROQ_API_KEY = "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"
 
 ADMIN_USER_ID = 6757681583
@@ -49,7 +49,7 @@ def ask_ai(prompt_text):
         "messages": [
             {
                 "role": "system",
-                "content": "شما مشاور ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی شهنواز پلاست هستید. کلیه قیمت‌ها را دقیق و با واحد «تومان بر کیلوگرم» بنویسید. پاسخ‌ها بسیار شکیل، خلاصه، تفکیک‌شده و کاربردی باشد.",
+                "content": "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی شهنواز پلاست هستید. تمام پاسخ‌ها دقیق، به زبان فارسی، خوش‌فرم، بدون مقدمه‌چینی اضافه و کلیه قیمت‌ها به «تومان بر کیلوگرم» تفکیک شوند.",
             },
             {"role": "user", "content": prompt_text},
         ],
@@ -69,12 +69,12 @@ async def market_sentinel_loop(app):
     await asyncio.sleep(10)
     while True:
         prompt = """
-        یک گزارش کوتاه و منظم (حداکثر ۱۲۰ کلمه) درباره وضعیت بازار پلیمر و پتروشیمی ایران بنویسید:
+        یک گزارش کوتاه، بسیار شیک و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
         📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار پتروشیمی]
         
         🔹 رویداد مهم:
-        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه یا ارز)
+        (توضیح کوتاه وضعیت بورس کالا یا عرضه)
         
         💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
@@ -82,12 +82,12 @@ async def market_sentinel_loop(app):
         ▫️ بادی (BL3): ... تومان
         ▫️ تزریقی / PP: ... تومان
         
-        🎯 توصیه عملیاتی به تولیدکننده:
-        (سیگنال شفاف: خرید پله‌ای / دست نگه‌داشتن)
+        🎯 توصیه عملیاتی:
+        (خرید پله‌ای / دست نگه‌داشتن)
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        قانون: اگر تحول خاصی در بازار نیست فقط بنویسید NO_UPDATE
+        قانون: اگر در بازار هیچ تحول خاصی نیست فقط بنویسید NO_UPDATE
         """
 
         try:
@@ -100,7 +100,7 @@ async def market_sentinel_loop(app):
                     "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش تحلیلی به کانال ارسال شد.")
+                logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
             logging.error(f"خطا در ارسال: {e}")
 
@@ -125,7 +125,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_USER_ID:
             return
 
-    status_msg = await update.message.reply_text("🔎 در حال استخراج و تحلیل داده‌ها...")
+    status_msg = await update.message.reply_text("🔎 در حال پردازش و استخراج تحلیل...")
 
     user_prompt = f"""
     کاربر سوال زیر را پرسیده است:
@@ -167,5 +167,5 @@ if __name__ == "__main__":
         MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     )
 
-    print("ربات شهنواز پلاست با مدل پرسرعت Groq فعال شد...")
+    print("دیده‌بان شهنواز پلاست آنلاین شد...")
     application.run_polling()
