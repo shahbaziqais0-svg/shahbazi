@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 
-# اطلاعات احراز هویت و دسترسی
+# اطلاعات هویتی و دسترسی
 TELEGRAM_TOKEN = "8844207944:AAHo15EbaQkdg8XK-w2FkGXb-TA7TvvRXqw"
 GROQ_API_KEY = "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"
 
@@ -45,7 +45,7 @@ def ask_ai(prompt_text):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "mixtral-8x7b-32768",
+        "model": "gemma2-9b-it",
         "messages": [
             {
                 "role": "system",
