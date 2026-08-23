@@ -45,7 +45,7 @@ def ask_ai(prompt_text):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "llama3-8b-8192",
+        "model": "mixtral-8x7b-32768",
         "messages": [
             {
                 "role": "system",
@@ -167,5 +167,5 @@ if __name__ == "__main__":
         MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     )
 
-    print("دیده‌بان شهنواز پلاست آنلاین شد...")
+    print("دیده‌بان شهنواز پلاست فعال شد...")
     application.run_polling()
