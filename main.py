@@ -24,19 +24,23 @@ ADMIN_USERNAME = "shahnawaz_admin"
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه بررسی بدون اسپم
+MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
+# وب‌سرور داخلی سبک سازگار با پورت متغیر Render
 def run_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
-        httpd.serve_forever()
+    try:
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            logging.info(f"وب‌سرور داخلی روی پورت {port} فعال شد.")
+            httpd.serve_forever()
+    except Exception as e:
+        logging.error(f"خطای وب‌سرور: {e}")
 
 def ask_ai(prompt_text):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -50,8 +54,8 @@ def ask_ai(prompt_text):
             {
                 "role": "system",
                 "content": (
-                    "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی شهنواز پلاست هستید. "
-                    "پاسخ‌ها دقیق، صریح، به زبان فارسی روان و تمام قیمت‌ها حتماً با واحد «تومان بر هر کیلوگرم» تفکیک شوند."
+                    "شما دستیار و تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک هستید. "
+                    "پاسخ‌ها را دقیق، بدون اضافه‌گویی و با ذکر قیمت‌ها به تومان بر کیلوگرم ارائه دهید."
                 ),
             },
             {"role": "user", "content": prompt_text},
@@ -60,37 +64,37 @@ def ask_ai(prompt_text):
     }
 
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=40)
+        res = requests.post(url, headers=headers, json=payload, timeout=35)
         if res.status_code == 200:
             return res.json()["choices"][0]["message"]["content"].strip()
         else:
             return f"خطا در مدل: {res.text}"
     except Exception as err:
-        return f"خطای ارتباطی: {str(err)}"
+        return f"خطای ارتباط با سرور: {str(err)}"
 
 async def market_sentinel_loop(app):
-    await asyncio.sleep(10)
+    await asyncio.sleep(15)
     while True:
         prompt = """
-        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ تا ۱۲۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
-        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ مواد پتروشیمی]
+        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
         
-        🔹 وضعیت و رویداد جاری:
-        (توضیح بسیار کوتاه وضعیت بورس کالا، عرضه پتروشیمی‌ها یا ارز)
+        🔹 رویداد مهم بازار:
+        (توضیح بسیار کوتاه وضعیت بورس کالا یا عرضه)
         
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
         ▫️ تزریقی / PP: ... تومان
         
         🎯 توصیه عملیاتی به تولیدکننده:
-        (سیگنال شفاف: خرید پله‌ای / دست نگه‌داشتن)
+        (خرید پله‌ای / دست نگه‌داشتن)
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        قانون مهم: اگر هیچ رویداد و نوسان خاصی در بازار نیست فقط بنویسید NO_UPDATE
+        اگر در بازار نوسان یا رویدادی نیست فقط بنویسید NO_UPDATE
         """
 
         try:
@@ -103,16 +107,16 @@ async def market_sentinel_loop(app):
                     "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش تحلیلی به کانال ارسال شد.")
+                logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
-            logging.error(f"خطا در ارسال گزارش به کانال: {e}")
+            logging.error(f"خطا در ارسال به کانال: {e}")
 
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید مستقیماً بپرسید."
+        "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی خوش آمدید.\n\n"
+        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید بپرسید."
     )
     await update.message.reply_text(welcome_text)
 
@@ -124,7 +128,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    # محدودیت پاسخ‌گویی در گروه‌ها (صرفاً برای ادمین)
+    # محدودیت دسترسی در گروه‌ها
     if chat_type in ["group", "supergroup"]:
         if user_id != ADMIN_USER_ID:
             return
@@ -142,34 +146,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = ask_ai(user_prompt)
         await status_msg.edit_text(reply)
     except Exception as e:
-        await status_msg.edit_text(f"خطا در ارتباط: {e}")
+        await status_msg.edit_text(f"خطا در پردازش: {e}")
 
 async def post_init(application):
     asyncio.create_task(market_sentinel_loop(application))
 
 if __name__ == "__main__":
+    # وب‌سرور داخلی برای Render
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
+    # پاک‌سازی خودکار اتصالات سرور قبلی
     try:
         requests.get(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
-            timeout=15,
+            timeout=10,
         )
     except Exception:
         pass
 
-    application = (
-        ApplicationBuilder()
-        .token(TELEGRAM_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
+    try:
+        application = (
+            ApplicationBuilder()
+            .token(TELEGRAM_TOKEN)
+            .post_init(post_init)
+            .build()
+        )
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
-    )
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(
+            MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+        )
 
-    print("ربات شهنواز پلاست فعال شد...")
-    application.run_polling()
+        print("ربات با موفقیت استارت شد...")
+        application.run_polling(drop_pending_updates=True)
+    except Exception as err:
+        logging.critical(f"خطای کلی در اجرای ربات: {err}")
