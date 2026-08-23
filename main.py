@@ -5,7 +5,6 @@ import os
 import socketserver
 import threading
 import requests
-from google import genai
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,9 +14,9 @@ from telegram.ext import (
     filters,
 )
 
-# تنظیمات هویتی
+# اطلاعات احراز هویت و دسترسی
 TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
-GEMINI_API_KEY = "AQ.Ab8RN6LalDK3h5kqU6R2mmoV98XS..."  # کلید کامل خود را دقیقاً اینجا قرار دهید
+GROQ_API_KEY = "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"
 
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
@@ -25,82 +24,92 @@ ADMIN_USERNAME = "shahnawaz_admin"
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه
+MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه بررسی بدون اسپم
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# راه‌اندازی کلاینت رسمی گوگل با کلید OAuth
-client = genai.Client(api_key=GEMINI_API_KEY)
-
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
     with socketserver.TCPServer(("", port), handler) as httpd:
-        logging.info(f"وب‌سرور روی پورت {port} فعال است.")
+        logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
         httpd.serve_forever()
 
-def ask_gemini(prompt_text):
-    """فراخوانی استاندارد با کتابخانه رسمی گوگل"""
+def ask_ai(prompt_text):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {
+                "role": "system",
+                "content": "شما مشاور ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی شهنواز پلاست هستید. کلیه قیمت‌ها را دقیق و با واحد «تومان بر کیلوگرم» بنویسید. پاسخ‌ها بسیار شکیل، خلاصه، تفکیک‌شده و کاربردی باشد.",
+            },
+            {"role": "user", "content": prompt_text},
+        ],
+        "temperature": 0.4,
+    }
+
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt_text,
-            config={"tools": [{"google_search": {}}]},
-        )
-        return response.text.strip()
+        res = requests.post(url, headers=headers, json=payload, timeout=40)
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"].strip()
+        else:
+            return f"خطا در مدل: {res.text}"
     except Exception as err:
-        return f"خطا در پردازش هوش مصنوعی: {str(err)}"
+        return f"خطای ارتباطی: {str(err)}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(10)
     while True:
         prompt = """
-        شما تحلیل‌گر ارشد و دیده‌بان بازار پلیمر، پلاستیک و پتروشیمی ایران برای کانال @shahnawazplast هستید.
+        یک گزارش کوتاه و منظم (حداکثر ۱۲۰ کلمه) درباره وضعیت بازار پلیمر و پتروشیمی ایران بنویسید:
         
-        یک پیام بسیار شیک، منظم، تفکیک‌شده و کاربردی بر اساس آخرین تحولات و قیمت‌های بازار بنویسید (حداکثر ۱۲۰ کلمه):
+        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار پتروشیمی]
         
-        📌 [عنوان فوری | مثلاً: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار بورس کالا]
+        🔹 رویداد مهم:
+        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه یا ارز)
         
-        🔹 رویداد و وضعیت جاری:
-        (توضیح کوتاه ۱ یا ۲ خطی درباره عرضه، دلار یا وضعیت پتروشیمی‌ها)
-        
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
         ▫️ تزریقی / PP: ... تومان
         
         🎯 توصیه عملیاتی به تولیدکننده:
-        (خرید پله‌ای / انتظار و عدم ورود به رقابت)
+        (سیگنال شفاف: خرید پله‌ای / دست نگه‌داشتن)
         
-        ⏳ اعتبار تحلیل: (مثلاً تا پایان تالار امروز)
+        ⏳ مهلت اعتبار تحلیل: ...
         
-        قانون: ساختار منظم، ایموجی‌های تمیز و بدون علائم نگارشی خراب‌کننده.
+        قانون: اگر تحول خاصی در بازار نیست فقط بنویسید NO_UPDATE
         """
-        
+
         try:
-            market_report = ask_gemini(prompt)
-            if "error" not in market_report.lower() and len(market_report) > 30:
+            report = ask_ai(prompt)
+            if "NO_UPDATE" not in report and "خطا" not in report and len(report) > 30:
                 final_post = (
-                    f"{market_report}\n\n"
+                    f"{report}\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"☎️ مشاوره و تأمین بار: {SUPPORT_PHONE}\n"
+                    f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
                     "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش تحلیلی با موفقیت به کانال ارسال شد.")
+                logging.info("گزارش تحلیلی به کانال ارسال شد.")
         except Exception as e:
-            logging.error(f"خطا در ناظر بازار: {e}")
+            logging.error(f"خطا در ارسال: {e}")
 
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت مواد، گریدها، فرمولاسیون یا بورس کالا دارید مستقیماً بپرسید."
+        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید بپرسید."
     )
     await update.message.reply_text(welcome_text)
 
@@ -116,25 +125,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_USER_ID:
             return
 
-    status_msg = await update.message.reply_text("🔎 در حال بررسی داده‌های بازار و تنظیم پاسخ...")
+    status_msg = await update.message.reply_text("🔎 در حال استخراج و تحلیل داده‌ها...")
 
     user_prompt = f"""
-    شما مشاور و تحلیل‌گر فنی بازار پلیمر و پتروشیمی شهنواز پلاست هستید.
     کاربر سوال زیر را پرسیده است:
     "{user_text}"
     
-    پاسخ را با قواعد زیر بنویسید:
-    - دقیق، صریح و به زبان فارسی روان.
-    - تمام قیمت‌ها به «تومان بر کیلوگرم» تفکیک شوند.
-    - بدون مقدمه‌چینی اضافه.
-    - در صورت لزوم ثبت سفارش، ارجاع به شماره تماس ({SUPPORT_PHONE}) داده شود.
+    پاسخ را دقیق، کاربردی و با ذکر قیمت‌ها به «تومان بر کیلوگرم» بدهید. در صورت نیاز به خرید به شماره ({SUPPORT_PHONE}) ارجاع دهید.
     """
 
     try:
-        reply = ask_gemini(user_prompt)
+        reply = ask_ai(user_prompt)
         await status_msg.edit_text(reply)
     except Exception as e:
-        await status_msg.edit_text(f"خطا در پردازش: {e}")
+        await status_msg.edit_text(f"خطا در ارتباط: {e}")
 
 async def post_init(application):
     asyncio.create_task(market_sentinel_loop(application))
@@ -163,5 +167,5 @@ if __name__ == "__main__":
         MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
     )
 
-    print("دیده‌بان شهنواز پلاست آنلاین شد...")
+    print("ربات شهنواز پلاست با هوش مصنوعی Groq فعال شد...")
     application.run_polling()
