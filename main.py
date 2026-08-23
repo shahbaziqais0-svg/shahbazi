@@ -20,7 +20,6 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "gsk_YMNavQjD5T2YaNMeB1VgWGdyb3FY9
 ADMIN_USER_ID = 6757681583
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
-MARKET_CHECK_INTERVAL = 1800
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -34,7 +33,7 @@ def run_dummy_server():
         logging.error(f"خطای وب‌سرور: {e}")
 
 def get_account_models():
-    """دریافت نام دقیق مدل‌های فعال در اکانت شما"""
+    """دریافت نام دقیق مدل‌های فعال اکانت از سرور Groq"""
     try:
         res = requests.get(
             "https://api.groq.com/openai/v1/models",
@@ -44,14 +43,14 @@ def get_account_models():
         if res.status_code == 200:
             data = res.json()
             return [m["id"] for m in data.get("data", [])]
-        return [f"خطای لیست مدل: {res.text}"]
+        return [f"خطای استعلام ({res.status_code}): {res.text}"]
     except Exception as e:
-        return [f"خطای شبکه: {str(e)}"]
+        return [f"خطای ارتباط: {str(e)}"]
 
 def ask_ai(prompt_text):
     if prompt_text.strip() == "لیست":
         models = get_account_models()
-        return "📋 مدل‌های فعال اکانت شما:\n\n" + "\n".join(f"▫️ `{m}`" for m in models)
+        return "مدل‌های فعال اکانت شما:\n\n" + "\n".join(f"- {m}" for m in models)
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -59,14 +58,15 @@ def ask_ai(prompt_text):
         "Content-Type": "application/json",
     }
     
-    # تست با مدل‌های رسمی Groq
+    # تست مدل‌های پیش‌فرض
     target_models = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama3-70b-8192"]
     
+    last_res = ""
     for m in target_models:
         payload = {
             "model": m,
             "messages": [
-                {"role": "system", "content": "شما دستیار بازار پلیمر و پلاستیک شهنواز پلاست هستید. پاسخ‌ها را دقیق به تومان بر کیلوگرم بدهید."},
+                {"role": "system", "content": "شما تحلیل‌گر ارشد بازار پلیمر و پتروشیمی هستید. قیمت‌ها به تومان بر کیلوگرم باشد."},
                 {"role": "user", "content": prompt_text}
             ],
             "temperature": 0.4
@@ -74,18 +74,20 @@ def ask_ai(prompt_text):
         res = requests.post(url, headers=headers, json=payload, timeout=25)
         if res.status_code == 200:
             return res.json()["choices"][0]["message"]["content"].strip()
+        last_res = res.text
 
-    return f"پاسخ سرور ({res.status_code}): {res.text}"
+    return f"پاسخ سرور: {last_res}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ربات آنلاین است. کلمه «لیست» را بفرستید تا مدل‌های فعال را ببینید.")
+    await update.message.reply_text("ربات آنلاین شد. کلمه «لیست» را ارسال کنید.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
-    status_msg = await update.message.reply_text("🔎 در حال پردازش...")
+    status_msg = await update.message.reply_text("🔎 در حال بررسی...")
     reply = ask_ai(update.message.text)
-    await status_msg.edit_text(reply, parse_mode="Markdown")
+    # ارسال به صورت متن خام برای جلوگیری از خطای پارس مارک‌داون
+    await status_msg.edit_text(reply)
 
 if __name__ == "__main__":
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
