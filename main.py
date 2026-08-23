@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 
-# دریافت امن کلیدها از پنل Render یا تعریف مستقیم
+# دریافت امن کلیدها
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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").strip()
 
@@ -31,73 +31,91 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی سبک سازگار با Render
+# وب‌سرور داخلی برای Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
     try:
         with socketserver.TCPServer(("", port), handler) as httpd:
-            logging.info(f"وب‌سرور داخلی روی پورت {port} فعال شد.")
+            logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
             httpd.serve_forever()
     except Exception as e:
         logging.error(f"خطای وب‌سرور: {e}")
 
+ACTIVE_MODEL_CACHE = None
+
+def get_best_available_model():
+    """دریافت لیست زنده مدل‌های فعال اکانت از Groq"""
+    global ACTIVE_MODEL_CACHE
+    if ACTIVE_MODEL_CACHE:
+        return ACTIVE_MODEL_CACHE
+
+    try:
+        res = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            data = res.json()
+            models = [m["id"] for m in data.get("data", []) if "whisper" not in m["id"]]
+            # اولویت‌بندی بر اساس مدل‌های برتر
+            for m in models:
+                if "llama" in m.lower():
+                    ACTIVE_MODEL_CACHE = m
+                    return m
+            if models:
+                ACTIVE_MODEL_CACHE = models[0]
+                return models[0]
+    except Exception as e:
+        logging.warning(f"عدم دریافت لیست مدل‌ها: {e}")
+
+    # مدل‌های پیش‌فرض در صورت عدم دسترسی به متادیتا
+    return "llama3-70b-8192"
+
 def ask_ai(prompt_text):
-    """تست خودکار مدل‌های فعال Groq برای جلوگیری از هرگونه خطای نام مدل"""
+    selected_model = get_best_available_model()
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
-    
-    # لیست تمام مدل‌های معتبر و فعال Groq
-    candidate_models = [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "llama3-8b-8192",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it"
-    ]
+    payload = {
+        "model": selected_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "شما دستیار و تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
+                    "پاسخ‌ها را دقیق، بدون اضافه‌گویی و با ذکر قیمت‌ها به تومان بر کیلوگرم ارائه دهید."
+                ),
+            },
+            {"role": "user", "content": prompt_text},
+        ],
+        "temperature": 0.4,
+    }
 
-    last_error = ""
-    for model_name in candidate_models:
-        payload = {
-            "model": model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "شما دستیار و مشاور تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
-                        "پاسخ‌ها را دقیق، کامل، فارسی روان، بدون زیاده‌گویی و با ذکر قیمت‌ها به تومان بر هر کیلوگرم بنویسید."
-                    ),
-                },
-                {"role": "user", "content": prompt_text},
-            ],
-            "temperature": 0.4,
-        }
-        try:
-            res = requests.post(url, headers=headers, json=payload, timeout=30)
-            if res.status_code == 200:
-                return res.json()["choices"][0]["message"]["content"].strip()
-            else:
-                last_error = res.text
-        except Exception as err:
-            last_error = str(err)
-            
-    return f"خطا در مدل: {last_error}"
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=35)
+        if res.status_code == 200:
+            return res.json()["choices"][0]["message"]["content"].strip()
+        else:
+            return f"خطا در مدل ({selected_model}): {res.text}"
+    except Exception as err:
+        return f"خطای ارتباط: {str(err)}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(15)
     while True:
         prompt = """
-        یک پیام کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
-        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار پتروشیمی]
+        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
         
         🔹 رویداد مهم بازار:
-        (توضیح بسیار کوتاه وضعیت بورس کالا، عرضه یا ارز)
+        (توضیح بسیار کوتاه وضعیت بورس کالا یا عرضه)
         
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
@@ -108,7 +126,7 @@ async def market_sentinel_loop(app):
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        قانون: اگر در بازار هیچ نوسان و تحولی نیست فقط بنویسید NO_UPDATE
+        اگر در بازار نوسان یا رویدادی نیست فقط بنویسید NO_UPDATE
         """
 
         try:
@@ -121,9 +139,9 @@ async def market_sentinel_loop(app):
                     "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش تحلیلی به کانال ارسال شد.")
+                logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
-            logging.error(f"خطا در ارسال گزارش: {e}")
+            logging.error(f"خطا در ارسال به کانال: {e}")
 
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
@@ -189,7 +207,7 @@ if __name__ == "__main__":
             MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
         )
 
-        print("ربات شهنواز پلاست فعال شد...")
+        print("دیده‌بان شهنواز پلاست آنلاین شد...")
         application.run_polling(drop_pending_updates=True)
     except Exception as err:
         logging.critical(f"خطای کلی در اجرای ربات: {err}")
