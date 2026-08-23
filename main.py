@@ -1,12 +1,6 @@
 import asyncio
-import http.server
 import logging
-import os
-import random
-import socketserver
-import threading
-import requests
-from google import genai
+import httpx
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -16,138 +10,124 @@ from telegram.ext import (
     filters,
 )
 
-# اطلاعات هویتی و دسترسی
+# کلیدها و تنظیمات
+GEMINI_API_KEY = "AQ.Ab8RN6KT5fQH2evb-MPZ4aGVu0mCDDZDrm_CM0e5m3pF1L9Eag"
 TELEGRAM_TOKEN = "8844207944:AAHo15EbaQkdg8XK-w2FkGXb-TA7TvvRXqw"
-GEMINI_API_KEY = "AQ.Ab8RN6LalDK3h5kqU6R2mmoV98XS..."  # کلید کامل Gemini خود را اینجا قرار دهید
 
-ADMIN_USER_ID = 6757681583
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
+
+# زمان‌بندی ارسال خودکار در کانال: هر ۶ ساعت
+POST_INTERVAL_SECONDS = 21600
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# تعریف کلاینت Gemini
-client = genai.Client(api_key=GEMINI_API_KEY)
+async def ask_gemini(prompt_text: str) -> str:
+    """درخواست ناهمگام به API جمینای"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt_text}]
+        }]
+    }
 
-def run_dummy_server():
-    port = int(os.environ.get("PORT", 8080))
-    handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
-        httpd.serve_forever()
-
-def ask_gemini(prompt_text):
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt_text,
-        )
-        return response.text.strip()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                return f"خطا در پردازش مدل ({response.status_code}):\n{response.text}"
     except Exception as err:
-        return f"خطا در مدل جمینای: {str(err)}"
+        return f"خطای ارتباطی با جمینای: {str(err)}"
 
-async def send_market_update(app):
-    prompt = """
-    شما تحلیل‌گر ارشد بازار پلیمر و پتروشیمی ایران برای کانال @shahnawazplast هستید.
-    یک گزارش تحلیلی کوتاه و بسیار شیک بنویسید:
-    
-    📌 [عنوان داغ و فوری بازار]
-    
-    🔹 وضعیت معاملات و بورس کالا:
-    (۱ الی ۲ خط تحلیل صریح)
-    
-    💰 مظنه گریدهای پرمصرف (تومان بر کیلوگرم):
-    ▫️ فیلم سنگین (F7000 / 020): ... تومان
-    ▫️ فیلم سبک (0075 / 2420): ... تومان
-    ▫️ بادی (BL3): ... تومان
-    ▫️ تزریقی و PP: ... تومان
-    
-    🎯 پیشنهاد به کارگاه‌ها:
-    (سیگنال شفاف خرید یا انتظار)
-    """
-    try:
-        report = ask_gemini(prompt)
-        if "خطا" not in report and len(report) > 30:
-            final_post = (
-                f"{report}\n\n"
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
-                "📢 رسانه تخصصی: @shahnawazplast"
-            )
-            await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-            logging.info("پست تحلیلی جمینای در کانال منتشر شد.")
-    except Exception as e:
-        logging.error(f"خطا در ارسال تحلیل: {e}")
-
-async def autonomous_market_sentinel(app):
-    # ۱۰ ثانیه بعد از روشن شدن یک پیام تستی می‌فرستد
-    await asyncio.sleep(10)
-    await send_market_update(app)
-
-    # زمان‌بندی شناور و غیرثابت (بین ۳۰ تا ۹۰ دقیقه)
+# ۱. حلقه ارسال خودکار گزارش‌ها به کانال
+async def auto_post_loop(app):
+    await asyncio.sleep(5)
     while True:
-        wait_seconds = random.randint(1800, 5400)
-        await asyncio.sleep(wait_seconds)
-        await send_market_update(app)
+        prompt = """
+        شما موتور هوشمند رصد، راستی‌آزمایی و تحلیل بازار پتروشیمی و پلیمر ایران برای کانال @shahnawazplast هستید.
+        
+        یک گزارش کامل، روزآمد و دقیق با بخش‌های زیر بنویسید:
+        
+        ۱. 🔍 راستی‌آزمایی پیش‌بینی‌های قبلی:
+        - بررسی اینکه آیا روندهای قیمتی و نوساناتی که در روزهای گذشته تخمین زده شده بود محقق شدند یا خیر.
+        
+        ۲. 🏭 رویدادها و اخبار روز صنعت پتروشیمی:
+        - تحولات مهم امروز/این هفته (تعمیرات پتروشیمی‌ها، وضعیت خوراک، نوسان نرخ دلار حواله و تصمیمات بورس کالا).
+        
+        ۳. 💰 تابلوی قیمت‌های تخمینی بازار و بورس (به تومان بر هر کیلوگرم):
+        - پلی‌اتیلن سنگین فیلم (020 / F7000)
+        - پلی‌اتیلن سبک فیلم (0075 / 2420)
+        - پلی‌اتیلن بادی (BL3)
+        - تزریقی و پلی‌پروپیلن (PP نساجی و شیمیایی)
+        
+        ۴. 🎯 سیگنال شفاف خرید/فروش + مهلت زمانی اعتبار:
+        - استراتژی مشخص برای تولیدکنندگان (خرید فوری، انتظار، یا خرید پله‌ای) همراه با مشخص کردن بازه زمانی اعتبار.
+        
+        قوانین: استفاده از ایموجی‌های منظم، بدون کاراکترهای خراب‌کننده فرمت، و کاملاً کاربردی برای صنف پلاستیک.
+        """
+        
+        try:
+            analysis_text = await ask_gemini(prompt)
+            message = (
+                "📊 دیده‌بان جامع، قیمت‌ها و تحلیل تخصصی پتروشیمی\n"
+                "🏭 شهنواز پلاست\n\n"
+                f"{analysis_text}\n\n"
+                "─────────────────────\n"
+                f"☎️ پشتیبانی: {SUPPORT_PHONE}\n"
+                f"📢 کانال اطلاع‌رسانی: {TARGET_CHAT_ID}"
+            )
+            
+            await app.bot.send_message(
+                chat_id=TARGET_CHAT_ID,
+                text=message
+            )
+            logging.info("گزارش خودکار در کانال درج شد.")
+        except Exception as e:
+            logging.error(f"خطا در ارسال گزارش خودکار: {e}")
 
+        await asyncio.sleep(POST_INTERVAL_SECONDS)
+
+# ۲. دستور /start در چت خصوصی
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت روز مواد، گریدها، فرمولاسیون یا خرید بورس کالا دارید بپرسید."
+        "شما می‌توانید هر سوالی درباره قیمت مواد، گریدها، تحلیل بورس، زمان خرید یا فرمول‌های تولید پلاستیک دارید مستقیماً اینجا بپرسید."
     )
     await update.message.reply_text(welcome_text)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-
-    chat_type = update.effective_chat.type
+# ۳. هندلر پاسخ‌گویی خودکار به سوالات کاربران
+async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    user_id = update.effective_user.id
-
-    if chat_type in ["group", "supergroup"] and user_id != ADMIN_USER_ID:
-        return
-
-    status_msg = await update.message.reply_text("🔎 در حال استخراج و تحلیل داده‌ها...")
+    status_msg = await update.message.reply_text("⏳ در حال بررسی سوال و استخراج پاسخ تخصصی...")
 
     user_prompt = f"""
+    شما مشاور فنی و تحلیل‌گر تخصصی بازار پتروشیمی، پلیمرها و تولید پلاستیک در مجموعه شهنواز پلاست هستید.
     کاربر سوال زیر را پرسیده است:
     "{user_text}"
     
-    پاسخ را صریح، کاربردی و به فارسی روان بنویسید.
-    قیمت‌ها تفکیک‌شده به «تومان بر کیلوگرم» باشد. در صورت نیاز به خرید عمده به شماره ({SUPPORT_PHONE}) ارجاع دهید.
+    پاسخ را با ویژگی‌های زیر بنویسید:
+    - دقیق، محترمانه، کاربردی و به زبان فارسی روان.
+    - در صورت نیاز به راهنمایی بیشتر، کاربر را ارجاع دهید که با شماره پشتیبانی ({SUPPORT_PHONE}) تماس بگیرد.
+    - پاسخ تمیز و بدون فرمت‌های پیچیده مارک‌داون باشد.
     """
 
     try:
-        reply = ask_gemini(user_prompt)
-        await status_msg.edit_text(reply)
+        reply_from_ai = await ask_gemini(user_prompt)
+        await status_msg.edit_text(reply_from_ai)
     except Exception as e:
-        await status_msg.edit_text(f"خطا در ارتباط: {str(e)}")
+        await status_msg.edit_text(f"خطا در دریافت پاسخ: {e}")
 
 async def post_init(application):
-    startup_msg = "🤖 ربات شهنواز پلاست با جمینای فعال شد."
-    try:
-        await application.bot.send_message(chat_id=ADMIN_USER_ID, text=startup_msg)
-    except Exception:
-        pass
-
-    asyncio.create_task(autonomous_market_sentinel(application))
+    asyncio.create_task(auto_post_loop(application))
 
 if __name__ == "__main__":
-    web_thread = threading.Thread(target=run_dummy_server, daemon=True)
-    web_thread.start()
-
-    try:
-        requests.get(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
-            timeout=15,
-        )
-    except Exception:
-        pass
-
     application = (
         ApplicationBuilder()
         .token(TELEGRAM_TOKEN)
@@ -157,8 +137,8 @@ if __name__ == "__main__":
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(
-        MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+        MessageHandler(filters.TEXT & (~filters.COMMAND), handle_user_question)
     )
 
-    print("دیده‌بان شهنواز پلاست با هوش مصنوعی جمینای فعال شد...")
+    print("دیده‌بان و پاسخ‌گوی هوشمند پتروشیمی روشن شد...")
     application.run_polling()
