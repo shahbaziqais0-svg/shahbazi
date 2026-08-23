@@ -14,9 +14,9 @@ from telegram.ext import (
     filters,
 )
 
-# اطلاعات احراز هویت و دسترسی
-TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
-GROQ_API_KEY = "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"
+# خواندن امن کلیدها از متغیرهای محیطی Render بدون افشا در گیت‌هاب
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
@@ -24,14 +24,13 @@ ADMIN_USERNAME = "shahnawaz_admin"
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
 
-MARKET_CHECK_INTERVAL = 1800  # بررسی هوشمند بازار هر ۳۰ دقیقه
+MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی سبک سازگار با Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
@@ -43,19 +42,22 @@ def run_dummy_server():
         logging.error(f"خطای وب‌سرور: {e}")
 
 def ask_ai(prompt_text):
+    if not GROQ_API_KEY:
+        return "خطا: کلید هوش مصنوعی GROQ_API_KEY در تنظیمات سرور ثبت نشده است."
+
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "openai/gpt-oss-120b",
+        "model": "llama-3.1-8b-instant",
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    "شما دستیار و مشاور تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
-                    "پاسخ‌ها را کامل، دقیق، فارسی روان، بدون زیاده‌گویی و با ذکر قیمت‌ها به تومان بر هر کیلوگرم بنویسید."
+                    "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
+                    "پاسخ‌ها دقیق، خوش‌فرم، فارسی روان و تمام قیمت‌ها با واحد «تومان بر کیلوگرم» تفکیک شوند."
                 ),
             },
             {"role": "user", "content": prompt_text},
@@ -76,14 +78,14 @@ async def market_sentinel_loop(app):
     await asyncio.sleep(15)
     while True:
         prompt = """
-        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک پیام کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
-        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
+        📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسانات تالار پتروشیمی]
         
         🔹 رویداد مهم بازار:
-        (توضیح بسیار کوتاه وضعیت بورس کالا، ارز یا عرضه پتروشیمی‌ها)
+        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه یا ارز)
         
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
+        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
         ▫️ فیلم سبک (0075 / 2420): ... تومان
         ▫️ بادی (BL3): ... تومان
@@ -94,7 +96,7 @@ async def market_sentinel_loop(app):
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        اگر در بازار هیچ تحول و نوسانی نیست فقط بنویسید NO_UPDATE
+        قانون: اگر در بازار هیچ نوسان و تحولی نیست فقط بنویسید NO_UPDATE
         """
 
         try:
@@ -107,9 +109,9 @@ async def market_sentinel_loop(app):
                     "📢 رسانه تخصصی: @shahnawazplast"
                 )
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("گزارش به کانال ارسال شد.")
+                logging.info("گزارش تحلیلی به کانال ارسال شد.")
         except Exception as e:
-            logging.error(f"خطا در ارسال به کانال: {e}")
+            logging.error(f"خطا در ارسال گزارش: {e}")
 
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
@@ -128,7 +130,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    # در گروه فقط به ادمین پاسخ می‌دهد
     if chat_type in ["group", "supergroup"]:
         if user_id != ADMIN_USER_ID:
             return
@@ -155,6 +156,10 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=run_dummy_server, daemon=True)
     web_thread.start()
 
+    if not TELEGRAM_TOKEN:
+        logging.critical("توکن تلگرام یافت نشد! لطفاً TELEGRAM_TOKEN را در پنل Environment وارد کنید.")
+        exit(1)
+
     try:
         requests.get(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
@@ -176,7 +181,7 @@ if __name__ == "__main__":
             MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
         )
 
-        print("دیده‌بان شهنواز پلاست آنلاین شد...")
+        print("ربات شهنواز پلاست با امنیت کامل آنلاین شد...")
         application.run_polling(drop_pending_updates=True)
     except Exception as err:
-        logging.critical(f"خطای کلی در اجرای ربات: {err}")
+        logging.critical(f"خطا در اجرای ربات: {err}")
