@@ -4,7 +4,7 @@ import logging
 import os
 import socketserver
 import threading
-import requests
+from openai import OpenAI
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 
-# دریافت امن کلیدها
+# اطلاعات احراز هویت
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE").strip()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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").strip()
 
@@ -31,89 +31,56 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# وب‌سرور داخلی برای Render
+# وب‌سرور داخلی Render
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
     try:
         with socketserver.TCPServer(("", port), handler) as httpd:
-            logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
+            logging.info(f"وب‌سرور داخلی فعال است روی پورت: {port}")
             httpd.serve_forever()
     except Exception as e:
         logging.error(f"خطای وب‌سرور: {e}")
 
-ACTIVE_MODEL_CACHE = None
-
-def get_best_available_model():
-    """دریافت لیست زنده مدل‌های فعال اکانت از Groq"""
-    global ACTIVE_MODEL_CACHE
-    if ACTIVE_MODEL_CACHE:
-        return ACTIVE_MODEL_CACHE
-
-    try:
-        res = requests.get(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            models = [m["id"] for m in data.get("data", []) if "whisper" not in m["id"]]
-            # اولویت‌بندی بر اساس مدل‌های برتر
-            for m in models:
-                if "llama" in m.lower():
-                    ACTIVE_MODEL_CACHE = m
-                    return m
-            if models:
-                ACTIVE_MODEL_CACHE = models[0]
-                return models[0]
-    except Exception as e:
-        logging.warning(f"عدم دریافت لیست مدل‌ها: {e}")
-
-    # مدل‌های پیش‌فرض در صورت عدم دسترسی به متادیتا
-    return "llama3-70b-8192"
+# اتصال استاندارد از طریق کتابخانه رسمی
+ai_client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=GROQ_API_KEY,
+)
 
 def ask_ai(prompt_text):
-    selected_model = get_best_available_model()
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": selected_model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "شما دستیار و تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
-                    "پاسخ‌ها را دقیق، بدون اضافه‌گویی و با ذکر قیمت‌ها به تومان بر کیلوگرم ارائه دهید."
-                ),
-            },
-            {"role": "user", "content": prompt_text},
-        ],
-        "temperature": 0.4,
-    }
-
-    try:
-        res = requests.post(url, headers=headers, json=payload, timeout=35)
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"].strip()
-        else:
-            return f"خطا در مدل ({selected_model}): {res.text}"
-    except Exception as err:
-        return f"خطای ارتباط: {str(err)}"
+    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+    for m in models:
+        try:
+            response = ai_client.chat.completions.create(
+                model=m,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "شما دستیار تخصصی بازار پلیمر، بورس کالا و صنعت پلاستیک شهنواز پلاست هستید. "
+                            "پاسخ‌ها را کامل، دقیق، فارسی، بدون مقدمه‌چینی و قیمت‌ها را با واحد تومان بر کیلوگرم ارائه دهید."
+                        ),
+                    },
+                    {"role": "user", "content": prompt_text},
+                ],
+                temperature=0.4,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception:
+            continue
+    return "در حال حاضر ارتباط با موتور هوش مصنوعی برقرار نشد."
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(15)
     while True:
         prompt = """
-        یک گزارش کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
+        یک گزارش تحلیلی کوتاه و تفکیک‌شده (حداکثر ۱۰۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
         
         📌 [عنوان جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ نوسان نرخ پایه بورس]
         
         🔹 رویداد مهم بازار:
-        (توضیح بسیار کوتاه وضعیت بورس کالا یا عرضه)
+        (توضیح کوتاه ۱ یا ۲ خطی وضعیت بورس کالا، عرضه پتروشیمی‌ها یا ارز)
         
         💰 تابلوی مظنه گریدهای پرمصرف (حتماً با درج «تومان بر هر کیلوگرم»):
         ▫️ فیلم سنگین (F7000 / 020): ... تومان
@@ -126,12 +93,12 @@ async def market_sentinel_loop(app):
         
         ⏳ مهلت اعتبار تحلیل: ...
         
-        اگر در بازار نوسان یا رویدادی نیست فقط بنویسید NO_UPDATE
+        قانون: اگر تحول خاصی در بازار نیست فقط بنویسید NO_UPDATE
         """
 
         try:
             report = ask_ai(prompt)
-            if "NO_UPDATE" not in report and "خطا" not in report and len(report) > 30:
+            if "NO_UPDATE" not in report and "ارتباط" not in report and len(report) > 30:
                 final_post = (
                     f"{report}\n\n"
                     "━━━━━━━━━━━━━━━━━━━━\n"
@@ -141,7 +108,7 @@ async def market_sentinel_loop(app):
                 await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
                 logging.info("گزارش به کانال ارسال شد.")
         except Exception as e:
-            logging.error(f"خطا در ارسال به کانال: {e}")
+            logging.error(f"خطا در ارسال: {e}")
 
         await asyncio.sleep(MARKET_CHECK_INTERVAL)
 
@@ -187,14 +154,6 @@ if __name__ == "__main__":
     web_thread.start()
 
     try:
-        requests.get(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
-            timeout=10,
-        )
-    except Exception:
-        pass
-
-    try:
         application = (
             ApplicationBuilder()
             .token(TELEGRAM_TOKEN)
@@ -207,7 +166,7 @@ if __name__ == "__main__":
             MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
         )
 
-        print("دیده‌بان شهنواز پلاست آنلاین شد...")
+        print("دیده‌بان آنلاین شد...")
         application.run_polling(drop_pending_updates=True)
     except Exception as err:
-        logging.critical(f"خطای کلی در اجرای ربات: {err}")
+        logging.critical(f"خطای کلی: {err}")
