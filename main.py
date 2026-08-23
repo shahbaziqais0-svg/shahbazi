@@ -5,6 +5,7 @@ import os
 import socketserver
 import threading
 import requests
+from google import genai
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -16,7 +17,7 @@ from telegram.ext import (
 
 # تنظیمات هویتی
 TELEGRAM_TOKEN = "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE"
-GEMINI_API_KEY = "AQ.Ab8RN6LbbWeVzglQJZBE9vcTP2Vkf4iND4v-7_MhxAugLVzOdA"
+GEMINI_API_KEY = "AQ.Ab8RN6LalDK3h5kqU6R2mmoV98XS..."  # کلید کامل خود را دقیقاً اینجا قرار دهید
 
 ADMIN_USER_ID = 6757681583
 ADMIN_USERNAME = "shahnawaz_admin"
@@ -31,6 +32,9 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
+# راه‌اندازی کلاینت رسمی گوگل با کلید OAuth
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 def run_dummy_server():
     port = int(os.environ.get("PORT", 8080))
     handler = http.server.SimpleHTTPRequestHandler
@@ -39,27 +43,16 @@ def run_dummy_server():
         httpd.serve_forever()
 
 def ask_gemini(prompt_text):
-    """ارسال درخواست استاندارد با هدر x-goog-api-key سازگار با تمام نسخه‌های کلید"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
-    }
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt_text}]
-        }]
-    }
-
+    """فراخوانی استاندارد با کتابخانه رسمی گوگل"""
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        if response.status_code == 200:
-            data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        else:
-            return f"پاسخ سرور هوش مصنوعی: {response.text}"
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt_text,
+            config={"tools": [{"google_search": {}}]},
+        )
+        return response.text.strip()
     except Exception as err:
-        return f"خطای ارتباطی: {str(err)}"
+        return f"خطا در پردازش هوش مصنوعی: {str(err)}"
 
 async def market_sentinel_loop(app):
     await asyncio.sleep(10)
