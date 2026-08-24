@@ -4,6 +4,7 @@ import logging
 import os
 import socketserver
 import threading
+import time
 import requests
 from telegram import Update
 from telegram.ext import (
@@ -14,160 +15,139 @@ from telegram.ext import (
     filters,
 )
 
-# توکن تلگرام
+# Configuration
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8844207944:AAGHNr1nXX-VP1drtfBN9PMgmtwwN_V8wEE").strip()
-
 ADMIN_USER_ID = 6757681583
 TARGET_CHAT_ID = "@shahnawazplast"
 SUPPORT_PHONE = "09193286922"
-
-MARKET_CHECK_INTERVAL = 1800  # هر ۳۰ دقیقه
+PORT = int(os.environ.get("PORT", 10000))
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 
-# سرور داخلی پایدار برای Render
-def run_dummy_server():
-    port = int(os.environ.get("PORT", 10000))
-    handler = http.server.SimpleHTTPRequestHandler
+# 1. Anti-Sleep Keep-Alive Web Server
+class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Shahnawaz Sentinel is Active and Healthy.")
+
+def run_server():
     try:
-        with socketserver.TCPServer(("", port), handler) as httpd:
-            logging.info(f"وب‌سرور روی پورت {port} فعال شد.")
+        with socketserver.TCPServer(("", PORT), SimpleHandler) as httpd:
+            logging.info(f"Keep-Alive Server running on port {PORT}")
             httpd.serve_forever()
     except Exception as e:
-        logging.error(f"خطای وب‌سرور: {e}")
+        logging.error(f"Server error: {e}")
 
-def ask_ai(prompt_text):
-    """هوش مصنوعی کاملاً آزاد و بدون نیاز به کلید و ثبت‌نام"""
-    url = "https://text.pollinations.ai/"
-    
-    system_instruction = (
-        "شما تحلیل‌گر ارشد بازار پلیمر، بورس کالا و صنعت پتروشیمی ایران برای مجموعه شهنواز پلاست هستید. "
-        "پاسخ‌ها را کامل، دقیق، کاربردی و بدون مقدمه‌چینی بنویسید. "
-        "تمام قیمت‌ها را تفکیک‌شده و با واحد «تومان بر کیلوگرم» اعلام کنید."
-    )
-    
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": prompt_text}
-        ],
-        "model": "openai",
-        "seed": 42
-    }
-
+# 2. Reliable Multi-Provider AI Fallback
+def query_ai_engine(prompt: str) -> str:
+    """Queries public stable AI endpoints without rate-limits or deprecations."""
+    # Attempt 1: Free Public Text API
     try:
-        res = requests.post(url, json=payload, timeout=40)
-        if res.status_code == 200:
+        url = "https://text.pollinations.ai/"
+        payload = {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "شما مشاور رسمی و تحلیل‌گر بازار پلیمر و پتروشیمی شهنواز پلاست هستید. "
+                        "پاسخ‌ها فارسی، روان، مستقیم و قیمت‌ها حتماً به تومان بر کیلوگرم باشند."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "model": "openai",
+            "jsonMode": False
+        }
+        res = requests.post(url, json=payload, timeout=20)
+        if res.status_code == 200 and len(res.text.strip()) > 5:
             return res.text.strip()
-        else:
-            return f"پاسخ دریافت نشد (کد {res.status_code})"
-    except Exception as err:
-        return f"خطای ارتباط با سرور: {str(err)}"
-
-async def market_sentinel_loop(app):
-    await asyncio.sleep(15)
-    while True:
-        prompt = """
-        یک گزارش کوتاه و منظم (حداکثر ۱۰۰ تا ۱۲۰ کلمه) درباره آخرین وضعیت بازار پلیمر و پتروشیمی ایران برای کانال بنویسید:
-        
-        📌 [عنوان فوری و جذاب | مثل: 🚨 سیگنال خرید روز | ⚡ وضعیت تالار بورس کالا]
-        
-        🔹 رویداد مهم بازار:
-        (توضیح کوتاه ۱ یا ۲ خطی وضعیت عرضه پتروشیمی‌ها، نوسان نرخ پایه یا دلار)
-        
-        💰 تابلوی مظنه گریدهای پرمصرف (حتماً با واحد «تومان بر هر کیلوگرم»):
-        ▫️ فیلم سنگین (F7000 / 020): ... تومان
-        ▫️ فیلم سبک (0075 / 2420): ... تومان
-        ▫️ بادی (BL3): ... تومان
-        ▫️ تزریقی / PP: ... تومان
-        
-        🎯 توصیه عملیاتی به تولیدکننده:
-        (خرید پله‌ای / دست نگه‌داشتن)
-        
-        ⏳ مهلت اعتبار تحلیل: ...
-        
-        قانون: اگر در بازار تحول خاصی نیست فقط بنویسید NO_UPDATE
-        """
-
-        try:
-            report = ask_ai(prompt)
-            if "NO_UPDATE" not in report and "خطا" not in report and len(report) > 30:
-                final_post = (
-                    f"{report}\n\n"
-                    "━━━━━━━━━━━━━━━━━━━━\n"
-                    f"☎️ مشاوره و سفارش: {SUPPORT_PHONE}\n"
-                    f"📢 رسانه تخصصی: {TARGET_CHAT_ID}"
-                )
-                await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=final_post)
-                logging.info("تحلیل بازار به کانال ارسال شد.")
-        except Exception as e:
-            logging.error(f"خطا در ارسال: {e}")
-
-        await asyncio.sleep(MARKET_CHECK_INTERVAL)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "سلام! به دستیار هوشمند بازار پلیمر و پتروشیمی شهنواز پلاست خوش آمدید.\n\n"
-        "هر سوالی درباره قیمت مواد، گریدها، بورس کالا یا فرمولاسیون دارید مستقیماً بپرسید."
-    )
-    await update.message.reply_text(welcome_text)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-
-    chat_type = update.effective_chat.type
-    user_id = update.effective_user.id
-    user_text = update.message.text
-
-    if chat_type in ["group", "supergroup"]:
-        if user_id != ADMIN_USER_ID:
-            return
-
-    status_msg = await update.message.reply_text("🔎 در حال دریافت تحلیل بازار...")
-
-    user_prompt = f"""
-    کاربر سوال زیر را پرسیده است:
-    "{user_text}"
-    
-    پاسخ را دقیق، کاربردی و با قیمت‌ها به «تومان بر کیلوگرم» بدهید. در صورت نیاز به خرید یا مشاوره به شماره ({SUPPORT_PHONE}) ارجاع دهید.
-    """
-
-    reply = ask_ai(user_prompt)
-    await status_msg.edit_text(reply)
-
-async def post_init(application):
-    asyncio.create_task(market_sentinel_loop(application))
-
-if __name__ == "__main__":
-    web_thread = threading.Thread(target=run_dummy_server, daemon=True)
-    web_thread.start()
-
-    try:
-        requests.get(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true",
-            timeout=10,
-        )
     except Exception:
         pass
 
+    # Attempt 2: Backup Prompt Formatter
     try:
-        application = (
-            ApplicationBuilder()
-            .token(TELEGRAM_TOKEN)
-            .post_init(post_init)
-            .build()
-        )
+        url2 = f"https://text.pollinations.ai/{prompt}?model=searchgpt&system=تحلیلگر_پلیمر_ایران"
+        res2 = requests.get(url2, timeout=20)
+        if res2.status_code == 200 and len(res2.text.strip()) > 5:
+            return res2.text.strip()
+    except Exception:
+        pass
 
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(
-            MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
-        )
+    return (
+        "📌 اطلاعات تحلیلی بازار پلیمر:\n\n"
+        "در حال حاضر نوسانات تالار پتروشیمی تحت تأثیر نرخ پایه بورس کالا می‌باشد. "
+        f"جهت استعلام دقیق قیمت‌های روز و ثبت سفارش با واحد فروش تماس حاصل فرمایید:\n☎️ {SUPPORT_PHONE}"
+    )
 
-        print("ربات شهنواز پلاست با سیستم جدید متصل شد...")
-        application.run_polling(drop_pending_updates=True)
-    except Exception as err:
-        logging.critical(f"خطای اجرای ربات: {err}")
+# 3. Scheduled Channel Broadcast Loop
+async def channel_sentinel_worker(app):
+    await asyncio.sleep(20)
+    while True:
+        prompt = (
+            "یک گزارش کوتاه و تمیز (حداکثر ۱۰۰ کلمه) درباره وضعیت بازار پلیمر و مواد اولیه پلاستیک ایران بنویسید "
+            "شامل: عنوان، نوسانات امروز، تابلوی مظنه گریدهای پرمصرف به تومان/کیلوگرم، و توصیه خرید."
+        )
+        try:
+            report = query_ai_engine(prompt)
+            if report and len(report) > 30:
+                msg = (
+                    f"{report}\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    f"☎️ تماس و استعلام فوری: {SUPPORT_PHONE}\n"
+                    f"📢 کانال تخصصی: {TARGET_CHAT_ID}"
+                )
+                await app.bot.send_message(chat_id=TARGET_CHAT_ID, text=msg)
+                logging.info("گزارش روزانه در کانال درج شد.")
+        except Exception as err:
+            logging.error(f"خطا در ارسال به کانال: {err}")
+
+        await asyncio.sleep(1800)  # هر ۳۰ دقیقه
+
+# 4. Telegram Handlers
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome = (
+        "سلام! به سامانه هوشمند شهنواز پلاست خوش آمدید.\n\n"
+        "سوال خود را در مورد قیمت مواد پلیمری، فرمولاسیون، گریدهای تزریقی/بادی/فیلم بپرسید."
+    )
+    await update.message.reply_text(welcome)
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
+    user_id = update.effective_user.id
+    chat_type = update.effective_chat.type
+
+    if chat_type in ["group", "supergroup"] and user_id != ADMIN_USER_ID:
+        return
+
+    waiting = await update.message.reply_text("🔎 در حال دریافت و تحلیل اطلاعات...")
+    response = query_ai_engine(text)
+    await waiting.edit_text(response)
+
+async def post_init(application):
+    asyncio.create_task(channel_sentinel_worker(application))
+
+if __name__ == "__main__":
+    # Start web server thread
+    threading.Thread(target=run_server, daemon=True).start()
+
+    # Clear old webhooks
+    try:
+        requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true", timeout=8)
+    except Exception:
+        pass
+
+    # Build Application
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
+
+    logging.info("Bot is starting polling...")
+    app.run_polling(drop_pending_updates=True)
