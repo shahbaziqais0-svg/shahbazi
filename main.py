@@ -34,58 +34,44 @@ def run_dummy_server():
     except Exception as e:
         logging.error(f"خطای وب‌سرور: {e}")
 
-def get_clean_model():
-    try:
-        res = requests.get(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            timeout=10,
-        )
-        if res.status_code == 200:
-            models = [m["id"].replace("models/", "") for m in res.json().get("data", []) if "whisper" not in m["id"] and "guard" not in m["id"]]
-            for m in models:
-                if "llama-3" in m or "llama3" in m:
-                    return m
-            if models:
-                return models[0]
-    except Exception:
-        pass
-    return "llama-3.3-70b-versatile"
-
 def ask_ai(user_question):
-    model_name = get_clean_model()
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
     
-    # تفهیم صریح وظیفه برای جلوگیری از پاسخ‌های نامربوط
     system_instruction = (
         "شما کارشناس و مشاور ارشد خرید و فروش مواد اولیه پلاستیک، پلیمر، پتروشیمی و بورس کالای ایران برای مجموعه شهنواز پلاست هستید.\n"
         "وظیفه شما:\n"
-        "۱. تحلیل وضعیت خرید، انبارداری و قیمت گریدهای پلیمری (فیلم، بادی، تزریقی مانند 0209، F7000، BL3، 0075 و غیره).\n"
-        "۲. پاسخ‌دهی کاملاً به زبان فارسی، منظم، خلاصه و تخصصی صنعت پلاستیک.\n"
-        "۳. اگر کاربر کلمه ربات یا سلام فرستاد، خود را معرفی کرده و بپرسید چه گریدی مدنظر دارند.\n"
-        "۴. هرگز درباره ربات‌های مکانیکی یا مباحث غیرمرتبط با مواد اولیه پلیمر صحبت نکنید."
+        "۱. تحلیل وضعیت خرید، انبارداری و پیش‌بینی قیمت گریدهای پلیمری (فیلم، بادی، تزریقی مانند 0209، F7000، BL3، 0075 و غیره).\n"
+        "۲. پاسخ‌دهی کاملاً به زبان فارسی، روان، منظم، کاربردی و بدون حاشیه.\n"
+        "۳. در صورت نیاز به اعلام قیمت، حتماً قیمت‌ها را بر اساس «تومان بر کیلوگرم» تفکیک کنید."
     )
 
-    payload = {
-        "model": model_name,
-        "messages": [
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": user_question},
-        ],
-        "temperature": 0.3,
-    }
+    # مدل‌های چت اختصاصی
+    target_models = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama3-70b-8192"]
+    
+    last_error = ""
+    for model_name in target_models:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_question},
+            ],
+            "temperature": 0.3,
+        }
 
-    try:
-        res = requests.post(url, headers=headers, json=payload, timeout=30)
-        if res.status_code == 200:
-            return res.json()["choices"][0]["message"]["content"].strip()
-        return f"خطا در مدل ({model_name}): {res.text}"
-    except Exception as err:
-        return f"خطای ارتباط: {str(err)}"
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=30)
+            if res.status_code == 200:
+                return res.json()["choices"][0]["message"]["content"].strip()
+            last_error = res.text
+        except Exception as err:
+            last_error = str(err)
+
+    return f"خطا در مدل: {last_error}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome = (
@@ -102,7 +88,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
-    # در گروه‌ها تنها به پیام‌هایی که ریپلای شوند یا توسط ادمین باشد پاسخ می‌دهد
     if chat_type in ["group", "supergroup"] and user_id != ADMIN_USER_ID:
         return
 
